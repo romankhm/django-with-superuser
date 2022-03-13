@@ -1,90 +1,79 @@
 from django.db import models
-from datetime import datetime
+from django.contrib.auth.models import User
+from django.db.models import Sum
 
-director = 'DI'
-admin = 'AD'
-cook = 'CO'
-cashier = 'CA'
-cleaner = 'CL'
 
-POSITIONS = [
-    (director, 'Директор'),
-    (admin, 'Администратор'),
-    (cook, 'Повар'),
-    (cashier, 'Кассир'),
-    (cleaner, 'Уборщик')
-]
+class Author(models.Model):
+    authorUser = models.OneToOneField(User, on_delete=models.CASCADE)
+    ratingAuthor = models.SmallIntegerField(default=0)
 
-class Staff(models.Model):
+    def update_rating(self):
+        postRat = self.post_set.all().aggregate(postRating=Sum('rating'))
+        pRat = 0
+        pRat += postRat.get('postRating')
 
-    director = 'DI'
-    admin = 'AD'
-    cook = 'CO'
-    cashier = 'CA'
-    cleaner = 'CL'
+        commentRat = self.authorUser.comment_set.all().aggregate(commentRating=Sum('rating'))
+        cRat = 0
+        cRat += commentRat.get('commentRating')
 
-    POSITIONS = [
-        (director, 'Директор'),
-        (admin, 'Администратор'),
-        (cook, 'Повар'),
-        (cashier, 'Кассир'),
-        (cleaner, 'Уборщик')
-]
-    
-    full_name = models.CharField(max_length = 255)
-    position = models.CharField(max_length = 255)
-    #position = models.CharField(max_length = 2, choices = POSITIONS, default = cashier)
-    labor_contract = models.IntegerField()
- 
-    #def get_last_name(self):
-        #return self.full_name.split()[0]  
-
-class Product(models.Model):
-    name = models.CharField(max_length = 255)
-    price = models.FloatField(default = 0.0)
-    composition = models.TextField(default = "Состав не указан")
-
-class Order(models.Model): # наследуемся от класса Model
-    time_in = models.DateTimeField(auto_now_add = True)
-    time_out = models.DateTimeField(null = True)
-    cost = models.FloatField(default = 0.0)
-    take_away = models.BooleanField(default = False)
-    complete = models.BooleanField(default = False)
-    staff = models.ForeignKey(Staff, on_delete = models.CASCADE)
-
-    products = models.ManyToManyField(Product, through = 'ProductOrder')
-
-    def finish_order(self):
-        self.time_out = datetime.now()
-        self.complete = True
+        self.ratingAuthor = pRat * 3 + cRat
         self.save()
 
-    def get_duration(self):
-      if self.complete: # если завершён, возвращаем разность объектов
-        return (self.time_out - self.time_in).total_seconds() // 60
-      else: # если ещё нет, то сколько длится выполнение
-        return (datetime.now() - self.time_in).total_seconts() // 60
 
-class ProductOrder(models.Model):
-    product = models.ForeignKey(Product, on_delete = models.CASCADE)
-    order = models.ForeignKey(Order, on_delete = models.CASCADE)
-    _amount = models.IntegerField(default = 1, db_column = 'amount') 
+class Category(models.Model):
+    name = models.CharField(max_length=64, unique=True)
 
-    @property
-    def amount(self):
-        return self._amount
 
-    @amount.setter
-    def amount(self, value):
-        self._amount = int(value) if value >= 0 else 0
+class Post(models.Model):
+    author = models.ForeignKey(Author, on_delete=models.CASCADE)
+
+    NEWS = 'NW'
+    ARTICLE = 'AR'
+    CATEGORY_CHOICES = (
+        (NEWS, 'Новость'),
+        (ARTICLE, 'Статья'),
+    )
+    categoryType = models.CharField(max_length=2, choices=CATEGORY_CHOICES, default=ARTICLE)
+    dateCreation = models.DateTimeField(auto_now_add=True)
+    postCategory = models.ManyToManyField(Category, through='PostCategory')
+    title = models.CharField(max_length=128)
+    text = models.TextField()
+    rating = models.SmallIntegerField(default=0)
+
+    def like(self):
+        self.rating += 1
         self.save()
 
-    def product_sum(self):
-        product_price = self.product.price
-        return product_price * self.amount   
+    def dislike(self):
+        self.rating -= 1
+        self.save()
 
-class SomeModel(models.Model):
-    field_int = models.IntegerField()
-    field_text = models.TextField()
+    def preview(self):
+        return self.text[0:123] + '...'
 
-# Create your models here.
+
+class PostCategory(models.Model):
+    postThrough = models.ForeignKey(Post, on_delete=models.CASCADE)
+    categoryThrough = models.ForeignKey(Category, on_delete=models.CASCADE)
+
+
+class Comment(models.Model):
+    commentPost = models.ForeignKey(Post, on_delete=models.CASCADE)
+    commentUser = models.ForeignKey(User, on_delete=models.CASCADE)
+    text = models.TextField()
+    dateCreation = models.DateTimeField(auto_now_add=True)
+    rating = models.SmallIntegerField(default=0)
+
+    def __str__(self):
+        try:
+            return self.commentPost.author.authorUser.username
+        except:
+            return self.commentUser.username
+
+    def like(self):
+        self.rating += 1
+        self.save()
+
+    def dislike(self):
+        self.rating -= 1
+        self.save()
